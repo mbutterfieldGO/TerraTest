@@ -1,0 +1,92 @@
+# Plan + Apply stages for a single environment.
+parameters:
+  - name: environment # matches infra/environments/<environment>
+    type: string
+  - name: serviceConnection # Azure Resource Manager service connection
+    type: string
+  - name: adoEnvironment # Azure DevOps Environment (holds approvals/checks)
+    type: string
+  - name: terraformVersion
+    type: string
+  - name: dependsOn
+    type: object
+    default: []
+
+stages:
+  # ---------------------------------------------------------------- Plan
+  - stage: Plan_${{ parameters.environment }}
+    displayName: Plan (${{ parameters.environment }})
+    dependsOn: ${{ parameters.dependsOn }}
+    jobs:
+      - job: Plan
+        displayName: Terraform plan
+        steps:
+          - checkout: self
+
+          - template: install-terraform.yml
+            parameters:
+              terraformVersion: ${{ parameters.terraformVersion }}
+
+          - task: AzureCLI@2
+            name: tf
+            displayName: Terraform plan (${{ parameters.environment }})
+            inputs:
+              azureSubscription: ${{ parameters.serviceConnection }}
+              scriptType: bash
+              scriptLocation: inlineScript
+              addSpnToEnvironment: true
+              workingDirectory: $(System.DefaultWorkingDirectory)/infra
+              inlineScript: >-
+                bash "$(System.DefaultWorkingDirectory)/pipelines/scripts/terraform.sh"
+                plan ${{ parameters.environment }} tfplan
+
+          # Plan files can contain secrets - artifacts are only visible to
+          # users with access to this pipeline's runs.
+          - publish: $(System.DefaultWorkingDirectory)/infra/tfplan
+            artifact: tfplan-${{ parameters.environment }}
+            displayName: Publish plan
+            condition: and(succeeded(), eq(variables['tf.hasChanges'], 'true'))
+
+  # --------------------------------------------------------------- Apply
+  - stage: Apply_${{ parameters.environment }}
+    displayName: Apply (${{ parameters.environment }})
+    dependsOn: Plan_${{ parameters.environment }}
+    # Only apply from main, never from PR validation, and only if the plan changed something.
+    condition: >-
+      and(
+        succeeded(),
+        ne(variables['Build.Reason'], 'PullRequest'),
+        eq(variables['Build.SourceBranch'], 'refs/heads/main'),
+        eq(dependencies.Plan_${{ parameters.environment }}.outputs['Plan.tf.hasChanges'], 'true')
+      )
+    jobs:
+      - deployment: Apply
+        displayName: Terraform apply
+        environment: ${{ parameters.adoEnvironment }}
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - download: current
+                  artifact: tfplan-${{ parameters.environment }}
+                  displayName: Download plan
+
+                - template: install-terraform.yml
+                  parameters:
+                    terraformVersion: ${{ parameters.terraformVersion }}
+
+                - task: AzureCLI@2
+                  name: tf
+                  displayName: Terraform apply (${{ parameters.environment }})
+                  inputs:
+                    azureSubscription: ${{ parameters.serviceConnection }}
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    addSpnToEnvironment: true
+                    workingDirectory: $(System.DefaultWorkingDirectory)/infra
+                    inlineScript: >-
+                      bash "$(System.DefaultWorkingDirectory)/pipelines/scripts/terraform.sh"
+                      apply ${{ parameters.environment }}
+                      "$(Pipeline.Workspace)/tfplan-${{ parameters.environment }}/tfplan"

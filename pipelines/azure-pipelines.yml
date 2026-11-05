@@ -1,0 +1,73 @@
+# Azure Function App infrastructure - Terraform
+#
+#   Validate -> Plan(dev) -> Apply(dev) -> Plan(prod) -> Apply(prod)
+#
+# PRs run Validate + Plan only. Apply runs on main, gated by the
+# Azure DevOps Environment approvals configured for each environment.
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - infra/*
+      - pipelines/*
+
+pr:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - infra/*
+      - pipelines/*
+
+variables:
+  terraformVersion: "1.17.0"
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+  # ------------------------------------------------------------ Validate
+  - stage: Validate
+    displayName: Validate
+    jobs:
+      - job: Validate
+        displayName: fmt + validate
+        steps:
+          - checkout: self
+
+          - template: templates/install-terraform.yml
+            parameters:
+              terraformVersion: ${{ variables.terraformVersion }}
+
+          - bash: terraform fmt -check -recursive -diff
+            displayName: terraform fmt -check
+            workingDirectory: $(System.DefaultWorkingDirectory)/infra
+
+          - bash: |
+              set -euo pipefail
+              terraform init -backend=false -input=false
+              terraform validate
+            displayName: terraform validate
+            workingDirectory: $(System.DefaultWorkingDirectory)/infra
+
+  # ----------------------------------------------------------------- Dev
+  - template: templates/terraform-environment.yml
+    parameters:
+      environment: dev
+      serviceConnection: sc-funcapp-dev
+      adoEnvironment: funcapp-dev
+      terraformVersion: ${{ variables.terraformVersion }}
+      dependsOn: [Validate]
+
+  # ---------------------------------------------------------------- Prod
+  - template: templates/terraform-environment.yml
+    parameters:
+      environment: prod
+      serviceConnection: sc-funcapp-prod
+      adoEnvironment: funcapp-prod
+      terraformVersion: ${{ variables.terraformVersion }}
+      dependsOn: [Apply_dev]
