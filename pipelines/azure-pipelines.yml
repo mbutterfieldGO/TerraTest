@@ -43,14 +43,18 @@ stages:
             parameters:
               terraformVersion: ${{ variables.terraformVersion }}
 
-          - bash: terraform fmt -check -recursive -diff
+          - pwsh: |
+              terraform fmt -check -recursive -diff
+              if ($LASTEXITCODE -ne 0) { throw "terraform fmt -check failed (exit $LASTEXITCODE)" }
             displayName: terraform fmt -check
             workingDirectory: $(System.DefaultWorkingDirectory)/infra
 
-          - bash: |
-              set -euo pipefail
+          - pwsh: |
+              $ErrorActionPreference = 'Stop'
               terraform init -backend=false -input=false
+              if ($LASTEXITCODE -ne 0) { throw "terraform init failed (exit $LASTEXITCODE)" }
               terraform validate
+              if ($LASTEXITCODE -ne 0) { throw "terraform validate failed (exit $LASTEXITCODE)" }
             displayName: terraform validate
             workingDirectory: $(System.DefaultWorkingDirectory)/infra
 

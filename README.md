@@ -22,15 +22,15 @@ pipelines/
 ├── azure-pipelines.yml                 # Validate -> Plan/Apply dev -> Plan/Apply prod
 ├── templates/terraform-environment.yml # Plan + Apply stages for one environment
 ├── templates/install-terraform.yml
-└── scripts/terraform.sh                # auth (OIDC or secret) + init + plan/apply
+└── scripts/terraform.ps1               # auth (OIDC or secret) + init + plan/apply (PowerShell 7)
 ```
 
 ## Prerequisites (one-time)
 
 1. **State storage**: create a storage account + container for remote state. The names must match `infra/environments/*/backend.hcl`:
-   ```bash
+   ```powershell
    az group create -n rg-terraform-state -l eastus2
-   az storage account create -n sttfstatefuncapp -g rg-terraform-state --sku Standard_LRS \
+   az storage account create -n sttfstatefuncapp -g rg-terraform-state --sku Standard_LRS `
      --min-tls-version TLS1_2 --allow-blob-public-access false
    az storage container create -n tfstate --account-name sttfstatefuncapp --auth-mode login
    ```
@@ -57,10 +57,10 @@ The plan is saved as a pipeline artifact. Apply runs exactly that plan file. Aft
 
 ## Running locally
 
-```bash
+```powershell
 cd infra
 az login
-export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+$env:ARM_SUBSCRIPTION_ID = az account show --query id -o tsv
 terraform init -backend-config=environments/dev/backend.hcl
 terraform plan -var-file=environments/dev/terraform.tfvars
 ```

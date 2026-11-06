@@ -3,16 +3,31 @@ parameters:
     type: string
 
 steps:
-  - bash: |
-      set -euo pipefail
-      if command -v terraform >/dev/null && terraform version | grep -q "v${TF_VERSION}$"; then
-        echo "Terraform ${TF_VERSION} already installed"
-      else
-        curl -fsSL -o "$(Agent.TempDirectory)/terraform.zip" \
-          "https://releases.hashicorp.com/terraform/${TF_VERSION}/terraform_${TF_VERSION}_linux_amd64.zip"
-        sudo unzip -o -q "$(Agent.TempDirectory)/terraform.zip" -d /usr/local/bin
-      fi
+  - pwsh: |
+      $ErrorActionPreference = 'Stop'
+      $version = $env:TF_VERSION
+
+      $installed = Get-Command terraform -ErrorAction SilentlyContinue
+      if ($installed -and ((terraform version) -match "v$([regex]::Escape($version))$")) {
+        Write-Host "Terraform $version already installed"
+      }
+      else {
+        $os   = if ($IsWindows) { 'windows' } elseif ($IsMacOS) { 'darwin' } else { 'linux' }
+        $arch = if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64') { 'arm64' } else { 'amd64' }
+        $zip  = Join-Path $env:AGENT_TEMPDIRECTORY 'terraform.zip'
+        $dest = Join-Path $env:AGENT_TOOLSDIRECTORY "terraform/$version"
+
+        Invoke-WebRequest -Uri "https://releases.hashicorp.com/terraform/$version/terraform_${version}_${os}_${arch}.zip" -OutFile $zip
+        Expand-Archive -Path $zip -DestinationPath $dest -Force
+        if (-not $IsWindows) { chmod +x (Join-Path $dest 'terraform') }
+
+        # Put it first on PATH for this step and every later step in the job.
+        $env:PATH = "$dest$([IO.Path]::PathSeparator)$env:PATH"
+        Write-Host "##vso[task.prependpath]$dest"
+      }
+
       terraform version
+      if ($LASTEXITCODE -ne 0) { throw "terraform version failed (exit $LASTEXITCODE)" }
     displayName: Install Terraform ${{ parameters.terraformVersion }}
     env:
       TF_VERSION: ${{ parameters.terraformVersion }}

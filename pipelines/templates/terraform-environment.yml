@@ -32,13 +32,13 @@ stages:
             displayName: Terraform plan (${{ parameters.environment }})
             inputs:
               azureSubscription: ${{ parameters.serviceConnection }}
-              scriptType: bash
+              scriptType: pscore
               scriptLocation: inlineScript
               addSpnToEnvironment: true
               workingDirectory: $(System.DefaultWorkingDirectory)/infra
               inlineScript: >-
-                bash "$(System.DefaultWorkingDirectory)/pipelines/scripts/terraform.sh"
-                plan ${{ parameters.environment }} tfplan
+                & "$(System.DefaultWorkingDirectory)/pipelines/scripts/terraform.ps1"
+                -Action plan -Environment ${{ parameters.environment }} -PlanFile tfplan
 
           # Plan files can contain secrets - artifacts are only visible to
           # users with access to this pipeline's runs.
@@ -82,11 +82,11 @@ stages:
                   displayName: Terraform apply (${{ parameters.environment }})
                   inputs:
                     azureSubscription: ${{ parameters.serviceConnection }}
-                    scriptType: bash
+                    scriptType: pscore
                     scriptLocation: inlineScript
                     addSpnToEnvironment: true
                     workingDirectory: $(System.DefaultWorkingDirectory)/infra
                     inlineScript: >-
-                      bash "$(System.DefaultWorkingDirectory)/pipelines/scripts/terraform.sh"
-                      apply ${{ parameters.environment }}
-                      "$(Pipeline.Workspace)/tfplan-${{ parameters.environment }}/tfplan"
+                      & "$(System.DefaultWorkingDirectory)/pipelines/scripts/terraform.ps1"
+                      -Action apply -Environment ${{ parameters.environment }}
+                      -PlanFile "$(Pipeline.Workspace)/tfplan-${{ parameters.environment }}/tfplan"
